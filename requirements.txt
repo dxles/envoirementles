@@ -5,4 +5,3 @@ supabase==2.9.0
 spotipy==2.23.0
 yt-dlp==2024.3.10
 requests==2.31.0
-httpx==0.24.1
