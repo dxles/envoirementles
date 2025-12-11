@@ -1,86 +1,557 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>⚡ Medya Merkezi (Free & Sınırsız)</title>
+    <title>NEXUS - Download Your Playlists</title>
     <style>
-        /* Basit CSS stilleri buraya gelecek */
-        body { font-family: sans-serif; margin: 0; padding: 20px; background-color: #121212; color: #e0e0e0; }
-        .container { max-width: 800px; margin: auto; background: #1f1f1f; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
-        h1 { color: #1DB954; text-align: center; }
-        .tab-menu button { background: #333; color: #fff; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px 5px 0 0; margin-right: 5px; }
-        .tab-menu button.active { background: #1DB954; }
-        .content-box { border: 1px solid #333; padding: 20px; border-top: none; background: #2a2a2a; border-radius: 0 0 8px 8px; }
-        input[type="text"], input[type="file"] { width: calc(100% - 22px); padding: 10px; margin-bottom: 15px; border: 1px solid #555; background: #333; color: #e0e0e0; border-radius: 4px; }
-        button[type="submit"] { background: #1DB954; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --color-primary: #6366f1;
+            --color-secondary: #8b5cf6;
+            --color-accent: #ec4899;
+            --color-darker: #050508;
+            --color-text: #e5e7eb;
+            --color-text-dim: #9ca3af;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--color-darker);
+            color: var(--color-text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            opacity: 0.15;
+            background: 
+                radial-gradient(circle at 20% 50%, var(--color-primary) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, var(--color-accent) 0%, transparent 50%);
+            animation: bgPulse 10s ease-in-out infinite;
+        }
+
+        @keyframes bgPulse {
+            0%, 100% { opacity: 0.15; transform: scale(1); }
+            50% { opacity: 0.25; transform: scale(1.1); }
+        }
+
+        header {
+            position: relative;
+            z-index: 100;
+            padding: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .logo {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 2px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--color-text-dim);
+            text-decoration: none;
+            transition: color 0.3s;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+        }
+
+        .nav-links a:hover {
+            color: var(--color-primary);
+        }
+
+        .hero {
+            position: relative;
+            z-index: 1;
+            min-height: 80vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 4rem 2rem;
+        }
+
+        .hero-content h1 {
+            font-size: 4rem;
+            font-weight: 900;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #fff, var(--color-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: fadeInUp 1s ease-out;
+        }
+
+        .hero-content p {
+            font-size: 1.25rem;
+            color: var(--color-text-dim);
+            margin-bottom: 3rem;
+            animation: fadeInUp 1s ease-out 0.2s both;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .download-section {
+            position: relative;
+            z-index: 1;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+        }
+
+        .form-card {
+            background: rgba(255,255,255,0.03);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 3rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            animation: fadeInUp 1s ease-out 0.4s both;
+        }
+
+        .input-group {
+            margin-bottom: 2rem;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            color: var(--color-primary);
+        }
+
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 1rem;
+            background: rgba(255,255,255,0.05);
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: var(--color-text);
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            background: rgba(255,255,255,0.08);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 1.25rem;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(99,102,241,0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.2);
+            transition: left 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .status-box {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+            display: none;
+        }
+
+        .status-box.active {
+            display: block;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .status-text {
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 1rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+            width: 0%;
+            transition: width 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .download-link {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: rgba(34,197,94,0.2);
+            border: 1px solid rgba(34,197,94,0.5);
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+
+        .download-link a {
+            color: #22c55e;
+            text-decoration: none;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .download-link a:hover {
+            text-decoration: underline;
+        }
+
+        .features {
+            position: relative;
+            z-index: 1;
+            padding: 6rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 4rem;
+            background: linear-gradient(135deg, #fff, var(--color-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            padding: 2rem;
+            background: rgba(255,255,255,0.03);
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--color-primary);
+            background: rgba(255,255,255,0.05);
+        }
+
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-card h3 {
+            margin-bottom: 0.5rem;
+            color: var(--color-primary);
+        }
+
+        .feature-card p {
+            color: var(--color-text-dim);
+            font-size: 0.95rem;
+        }
+
+        footer {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 2rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: var(--color-text-dim);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .hero-content h1 {
+                font-size: 2.5rem;
+            }
+
+            .form-card {
+                padding: 2rem;
+            }
+
+            .nav-links {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🎧 Müzik & Medya Merkezi </h1>
-        <p style="text-align: center;">Spotify Playlist, TXT Listesi veya Yerel Dosya Dönüştürme</p>
+    <div class="bg-animation"></div>
 
-        <div class="tab-menu">
-            <button class="tab-btn active" data-tab="spotify">Spotify Playlist İndir</button>
-            <button class="tab-btn" data-tab="converter">Format Dönüştürücü</button>
+    <header>
+        <div class="logo">NEXUS</div>
+        <ul class="nav-links">
+            <li><a href="#home">Home</a></li>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#download">Download</a></li>
+        </ul>
+    </header>
+
+    <section class="hero" id="home">
+        <div class="hero-content">
+            <h1>NEXUS</h1>
+            <p>Transform your Spotify playlists into downloadable music collections</p>
         </div>
+    </section>
 
-        <div id="spotify" class="content-box tab-content">
-            <form id="spotify-form" method="POST" action="/api/download/spotify">
-                <label for="playlist_url">Spotify Playlist URL'si:</label>
-                <input type="text" id="playlist_url" name="playlist_url" 
-                       placeholder="Örn: https://open.spotify.com/playlist/..." required>
-                
-                <label for="format_spotify">Çıktı Formatı:</label>
-                <select id="format_spotify" name="output_format" style="width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
-                    <option value="mp3">MP3 (Yüksek Kalite)</option>
-                    <option value="flac">FLAC (Kayıpsız)</option>
-                </select>
+    <section class="download-section" id="download">
+        <div class="form-card">
+            <form id="downloadForm">
+                <div class="input-group">
+                    <label for="playlistUrl">Spotify Playlist URL</label>
+                    <input 
+                        type="text" 
+                        id="playlistUrl" 
+                        name="playlist_url"
+                        placeholder="https://open.spotify.com/playlist/..." 
+                        required
+                    >
+                </div>
 
-                <button type="submit">İndirme Başlat</button>
+                <div class="input-group">
+                    <label for="outputFormat">Output Format</label>
+                    <select id="outputFormat" name="output_format">
+                        <option value="mp3">MP3</option>
+                        <option value="m4a">M4A</option>
+                        <option value="wav">WAV</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">
+                    Start Download
+                </button>
             </form>
-            <div id="spotify-status" style="margin-top: 20px; color: #ffeb3b;"></div>
-        </div>
 
-        <div id="converter" class="content-box tab-content" style="display:none;">
-            <form id="converter-form" method="POST" action="/api/convert" enctype="multipart/form-data">
-                <label for="file_upload">Dönüştürülecek Dosyayı Seçin (.webm, .m4a, .wav vb.):</label>
-                <input type="file" id="file_upload" name="media_file" required>
-                
-                <label for="format_convert">Hedef Format:</label>
-                <select id="format_convert" name="output_format" style="width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
-                    <option value="mp3">MP3</option>
-                    <option value="wav">WAV</option>
-                    <option value="flac">FLAC</option>
-                </select>
-
-                <button type="submit">Dönüştür ve İndir</button>
-            </form>
-            <div id="converter-status" style="margin-top: 20px; color: #ffeb3b;"></div>
+            <div class="status-box" id="statusBox">
+                <div class="status-text" id="statusText">Initializing...</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="download-link" id="downloadLink">
+                    <a href="#" id="downloadUrl" download>
+                        📥 Download your files
+                    </a>
+                </div>
+            </div>
         </div>
-        
-        <p style="font-size: 12px; text-align: center; margin-top: 30px;">Tüm işlemler ücretsizdir ve dönüştürme sunucularımızda gerçekleşir. FFmpeg desteklidir.</p>
-    </div>
+    </section>
+
+    <section class="features" id="features">
+        <h2>Why Choose NEXUS?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🚀</div>
+                <h3>Lightning Fast</h3>
+                <p>Process entire playlists in minutes with our optimized engine</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎵</div>
+                <h3>High Quality</h3>
+                <p>Download in multiple formats with pristine audio quality</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>Secure & Private</h3>
+                <p>Your data is never stored or shared with third parties</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">💯</div>
+                <h3>100% Free</h3>
+                <p>No subscriptions, no hidden fees, completely free forever</p>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2024 NEXUS. All rights reserved.</p>
+    </footer>
 
     <script>
-        // JavaScript ile sekme geçişleri ve form gönderimi yönetilir
-        document.querySelectorAll('.tab-btn').forEach(button => {
-            button.addEventListener('click', () => {
-                const tabId = button.getAttribute('data-tab');
-
-                // Tüm sekmeleri ve içerikleri gizle/pasif yap
-                document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
-                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-
-                // Tıklananı göster/aktif yap
-                document.getElementById(tabId).style.display = 'block';
-                button.classList.add('active');
-            });
+        const API_BASE_URL = window.location.origin;
+        
+        document.getElementById('downloadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const statusBox = document.getElementById('statusBox');
+            const statusText = document.getElementById('statusText');
+            const progressFill = document.getElementById('progressFill');
+            const downloadLink = document.getElementById('downloadLink');
+            const downloadUrl = document.getElementById('downloadUrl');
+            
+            const formData = new FormData(e.target);
+            
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            statusBox.classList.add('active');
+            downloadLink.style.display = 'none';
+            
+            try {
+                statusText.textContent = 'Starting download process...';
+                progressFill.style.width = '10%';
+                
+                const response = await fetch(`${API_BASE_URL}/api/download/spotify`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.message || 'Download failed');
+                }
+                
+                const taskId = data.task_id;
+                statusText.textContent = 'Processing playlist...';
+                progressFill.style.width = '30%';
+                
+                const checkStatus = setInterval(async () => {
+                    try {
+                        const statusResponse = await fetch(`${API_BASE_URL}/api/status/${taskId}`);
+                        const statusData = await statusResponse.json();
+                        
+                        if (statusData.status === 'TAMAMLANDI') {
+                            clearInterval(checkStatus);
+                            statusText.textContent = 'Download complete! ✓';
+                            progressFill.style.width = '100%';
+                            
+                            downloadUrl.href = statusData.link;
+                            downloadLink.style.display = 'block';
+                            
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = 'Start Download';
+                        } else if (statusData.status === 'HATA') {
+                            clearInterval(checkStatus);
+                            throw new Error('Processing failed');
+                        } else {
+                            statusText.textContent = `Processing: ${statusData.ilerleme}`;
+                            const progress = statusData.ilerleme.split('/');
+                            const percentage = 30 + (parseInt(progress[0]) / parseInt(progress[1])) * 60;
+                            progressFill.style.width = percentage + '%';
+                        }
+                    } catch (err) {
+                        clearInterval(checkStatus);
+                        throw err;
+                    }
+                }, 2000);
+                
+            } catch (error) {
+                statusText.textContent = `Error: ${error.message}`;
+                progressFill.style.width = '0%';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Start Download';
+            }
         });
-
-        // NOT: Formların gönderilmesi (Flask'a veri gönderme) ve 
-        // durum takibi (işlem kuyruğu) için karmaşık JavaScript/AJAX kodu gerekecektir.
     </script>
 </body>
 </html>
