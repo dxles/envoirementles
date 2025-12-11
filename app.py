@@ -1,7 +1,7 @@
+import os
 from flask import Flask, render_template, request, jsonify
 from celery import Celery
 from supabase import create_client, Client
-import os
 import subprocess
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -9,7 +9,6 @@ import requests
 import zipfile
 import shutil
 import uuid
-import json
 
 # ENV DEĞİŞKENLERİ
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -20,10 +19,19 @@ SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET")
 YT_KEY = os.environ.get("YT_KEY")
 
-# Supabase, Celery, Flask Uygulaması Kurulumu
+# Template ve static folder path'lerini açıkça belirt
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+template_dir = os.path.join(BASE_DIR, 'templates')
+static_dir = os.path.join(BASE_DIR, 'static')
+
+# Flask App Setup
+app = Flask(__name__, 
+           template_folder=template_dir, 
+           static_folder=static_dir)
+
+# Supabase, Celery Setup
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 celery_app = Celery('tasks', broker=REDIS_URL, backend=REDIS_URL)
-app = Flask(__name__, template_folder='templates', static_folder='static')
 
 # CORS için basit header ekle
 @app.after_request
@@ -267,7 +275,93 @@ def toplu_indirme_gorevi(self, playlist_url, output_format):
 # FLASK ROUTE'LAR
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # Templates klasörü yoksa HTML'i doğrudan döndür
+    try:
+        return render_template('index.html')
+    except:
+        # Fallback HTML
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>NEXUS - Download Your Playlists</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: 'Segoe UI', sans-serif; background: #050508; color: #e5e7eb; }
+                .container { max-width: 800px; margin: 0 auto; padding: 2rem; }
+                h1 { font-size: 3rem; text-align: center; margin: 2rem 0; 
+                     background: linear-gradient(135deg, #6366f1, #ec4899);
+                     -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+                .form-card { background: rgba(255,255,255,0.05); padding: 2rem; 
+                            border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); }
+                input, select, button { width: 100%; padding: 1rem; margin: 1rem 0;
+                                       background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.1);
+                                       border-radius: 10px; color: white; font-size: 1rem; }
+                button { background: linear-gradient(135deg, #6366f1, #ec4899);
+                        cursor: pointer; font-weight: bold; }
+                button:hover { opacity: 0.9; }
+                .status { display: none; margin-top: 2rem; padding: 1rem;
+                         background: rgba(34,197,94,0.2); border-radius: 10px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>NEXUS</h1>
+                <div class="form-card">
+                    <form id="downloadForm">
+                        <input type="text" id="playlistUrl" name="playlist_url" 
+                               placeholder="Spotify Playlist URL" required>
+                        <select name="output_format">
+                            <option value="mp3">MP3</option>
+                            <option value="m4a">M4A</option>
+                            <option value="wav">WAV</option>
+                        </select>
+                        <button type="submit">Start Download</button>
+                    </form>
+                    <div class="status" id="status"></div>
+                </div>
+            </div>
+            <script>
+                document.getElementById('downloadForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.target);
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.style.display = 'block';
+                    statusDiv.textContent = 'Processing...';
+                    
+                    try {
+                        const response = await fetch('/api/download/spotify', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            statusDiv.textContent = 'Download started! Task ID: ' + data.task_id;
+                            
+                            const checkStatus = setInterval(async () => {
+                                const statusRes = await fetch('/api/status/' + data.task_id);
+                                const statusData = await statusRes.json();
+                                
+                                if (statusData.status === 'TAMAMLANDI') {
+                                    clearInterval(checkStatus);
+                                    statusDiv.innerHTML = 'Complete! <a href="' + statusData.link + 
+                                                         '" style="color:#22c55e">Download</a>';
+                                } else {
+                                    statusDiv.textContent = 'Progress: ' + statusData.ilerleme;
+                                }
+                            }, 2000);
+                        }
+                    } catch (err) {
+                        statusDiv.textContent = 'Error: ' + err.message;
+                    }
+                });
+            </script>
+        </body>
+        </html>
+        """
 
 @app.route('/api/download/spotify', methods=['POST'])
 def handle_spotify_download():
