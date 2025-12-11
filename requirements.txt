@@ -1,0 +1,7 @@
+flask==3.0.0
+celery==5.3.4
+redis==5.0.1
+supabase==2.3.0
+spotipy==2.23.0
+yt-dlp==2024.3.10
+requests==2.31.0
