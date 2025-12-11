@@ -1,6 +1,7 @@
 import os
+import threading
+import uuid
 from flask import Flask, render_template, request, jsonify
-from celery import Celery
 from supabase import create_client, Client
 import subprocess
 import spotipy
@@ -8,12 +9,10 @@ from spotipy.oauth2 import SpotifyClientCredentials
 import requests
 import zipfile
 import shutil
-import uuid
 
 # ENV DEĞİŞKENLERİ
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 PORT = os.environ.get("PORT", "8080")
 SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET")
@@ -29,9 +28,8 @@ app = Flask(__name__,
            template_folder=template_dir, 
            static_folder=static_dir)
 
-# Supabase, Celery Setup
+# Supabase Setup
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-celery_app = Celery('tasks', broker=REDIS_URL, backend=REDIS_URL)
 
 # CORS için basit header ekle
 @app.after_request
@@ -47,6 +45,9 @@ def yt_dlp_ile_indir_ve_donustur(youtube_url, sarki_adi, output_format, output_d
     try:
         # Güvenli dosya adı oluştur
         safe_filename = "".join(c for c in sarki_adi if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        if not safe_filename:
+            safe_filename = str(uuid.uuid4())[:8]
+        
         output_path = os.path.join(output_dir, f"{safe_filename}.{output_format}")
         
         # yt-dlp komutu
@@ -171,10 +172,9 @@ def youtube_video_ara(sorgu):
         print(f"YouTube API Hatası: {str(e)}")
         return "API_HATASI"
 
-# CELERY ARKA PLAN GÖREVİ
-@celery_app.task(bind=True)
-def toplu_indirme_gorevi(self, playlist_url, output_format):
-    gorev_id = self.request.id
+# ARKA PLAN İŞLEMİ (CELERYsiz - Threading ile)
+def toplu_indirme_gorevi(playlist_url, output_format, gorev_id):
+    """Arkaplanda çalışan indirme görevi"""
     temp_dir = os.path.join("/tmp", str(gorev_id))
     os.makedirs(temp_dir, exist_ok=True)
     
@@ -187,6 +187,8 @@ def toplu_indirme_gorevi(self, playlist_url, output_format):
             "ilerleme": "0/???"
         }).execute()
         
+        print(f"[{gorev_id}] Playlist parsing başladı...")
+        
         # Spotify playlist'i parse et
         sarki_listesi = spotify_playlist_parcala(playlist_url)
         toplam_sarki = len(sarki_listesi)
@@ -194,22 +196,25 @@ def toplu_indirme_gorevi(self, playlist_url, output_format):
         if toplam_sarki == 0:
             raise Exception("Playlist'te şarkı bulunamadı")
         
+        print(f"[{gorev_id}] {toplam_sarki} şarkı bulundu")
+        
         mp3_yollari = []
         
         for i, sarki in enumerate(sarki_listesi):
             try:
                 # İlerlemeyi güncelle
-                self.update_state(state='PROGRESS', meta={'current': i + 1, 'total': toplam_sarki})
                 supabase.table("gorevler").update({
                     "ilerleme": f"{i+1}/{toplam_sarki}",
                     "durum": "İŞLENİYOR"
                 }).eq("id", gorev_id).execute()
                 
+                print(f"[{gorev_id}] İşleniyor ({i+1}/{toplam_sarki}): {sarki['arama_sorgusu']}")
+                
                 # YouTube'da ara
                 youtube_url = youtube_video_ara(sarki['arama_sorgusu'])
                 
                 if "BULUNAMADI" in youtube_url or "API_HATASI" in youtube_url:
-                    print(f"Atlandı: {sarki['arama_sorgusu']}")
+                    print(f"[{gorev_id}] Atlandı: {sarki['arama_sorgusu']}")
                     continue
                 
                 # İndir ve çevir
@@ -222,19 +227,24 @@ def toplu_indirme_gorevi(self, playlist_url, output_format):
                 
                 if downloaded_file and os.path.exists(downloaded_file):
                     mp3_yollari.append(downloaded_file)
+                    print(f"[{gorev_id}] Başarılı: {os.path.basename(downloaded_file)}")
                     
             except Exception as e:
-                print(f"Şarkı işlenirken hata ({sarki['arama_sorgusu']}): {str(e)}")
+                print(f"[{gorev_id}] Şarkı hatası ({sarki['arama_sorgusu']}): {str(e)}")
                 continue
         
         if not mp3_yollari:
             raise Exception("Hiçbir şarkı indirilemedi")
+        
+        print(f"[{gorev_id}] ZIP oluşturuluyor... ({len(mp3_yollari)} dosya)")
         
         # ZIP oluştur
         zip_cikti_yolu = os.path.join("/tmp", f"{gorev_id}.zip")
         with zipfile.ZipFile(zip_cikti_yolu, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for mp3_yolu in mp3_yollari:
                 zipf.write(mp3_yolu, os.path.basename(mp3_yolu))
+        
+        print(f"[{gorev_id}] Supabase'e yükleniyor...")
         
         # Supabase Storage'a yükle
         file_path = f"downloads/{gorev_id}.zip"
@@ -251,6 +261,8 @@ def toplu_indirme_gorevi(self, playlist_url, output_format):
             "ilerleme": f"{len(mp3_yollari)}/{toplam_sarki}"
         }).eq("id", gorev_id).execute()
         
+        print(f"[{gorev_id}] TAMAMLANDI! Link: {indirme_linki}")
+        
         # Temizlik
         shutil.rmtree(temp_dir, ignore_errors=True)
         if os.path.exists(zip_cikti_yolu):
@@ -260,7 +272,7 @@ def toplu_indirme_gorevi(self, playlist_url, output_format):
         
     except Exception as e:
         hata_mesaji = str(e)
-        print(f"Genel hata: {hata_mesaji}")
+        print(f"[{gorev_id}] GENEL HATA: {hata_mesaji}")
         
         supabase.table("gorevler").update({
             "durum": "HATA",
@@ -302,8 +314,15 @@ def index():
                 button { background: linear-gradient(135deg, #6366f1, #ec4899);
                         cursor: pointer; font-weight: bold; }
                 button:hover { opacity: 0.9; }
+                button:disabled { opacity: 0.5; cursor: not-allowed; }
                 .status { display: none; margin-top: 2rem; padding: 1rem;
-                         background: rgba(34,197,94,0.2); border-radius: 10px; }
+                         background: rgba(99,102,241,0.2); border-radius: 10px; border: 1px solid rgba(99,102,241,0.5); }
+                .status.active { display: block; }
+                .progress { margin-top: 1rem; font-size: 1.2rem; font-weight: bold; color: #22c55e; }
+                .error { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.5); color: #ef4444; }
+                .download-link { margin-top: 1rem; }
+                .download-link a { color: #22c55e; text-decoration: none; font-weight: bold; }
+                .download-link a:hover { text-decoration: underline; }
             </style>
         </head>
         <body>
@@ -312,50 +331,87 @@ def index():
                 <div class="form-card">
                     <form id="downloadForm">
                         <input type="text" id="playlistUrl" name="playlist_url" 
-                               placeholder="Spotify Playlist URL" required>
+                               placeholder="Spotify Playlist URL (örn: https://open.spotify.com/playlist/...)" required>
                         <select name="output_format">
                             <option value="mp3">MP3</option>
                             <option value="m4a">M4A</option>
                             <option value="wav">WAV</option>
                         </select>
-                        <button type="submit">Start Download</button>
+                        <button type="submit" id="submitBtn">Start Download</button>
                     </form>
-                    <div class="status" id="status"></div>
+                    <div class="status" id="status">
+                        <div id="statusText">Başlatılıyor...</div>
+                        <div class="progress" id="progress"></div>
+                        <div class="download-link" id="downloadLink"></div>
+                    </div>
                 </div>
             </div>
             <script>
                 document.getElementById('downloadForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
+                    
                     const formData = new FormData(e.target);
                     const statusDiv = document.getElementById('status');
-                    statusDiv.style.display = 'block';
-                    statusDiv.textContent = 'Processing...';
+                    const statusText = document.getElementById('statusText');
+                    const progressDiv = document.getElementById('progress');
+                    const downloadLink = document.getElementById('downloadLink');
+                    const submitBtn = document.getElementById('submitBtn');
+                    
+                    statusDiv.classList.add('active');
+                    statusDiv.classList.remove('error');
+                    statusText.textContent = 'Playlist işleniyor...';
+                    progressDiv.textContent = '';
+                    downloadLink.innerHTML = '';
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'İşleniyor...';
                     
                     try {
                         const response = await fetch('/api/download/spotify', {
                             method: 'POST',
                             body: formData
                         });
+                        
                         const data = await response.json();
                         
-                        if (data.success) {
-                            statusDiv.textContent = 'Download started! Task ID: ' + data.task_id;
-                            
-                            const checkStatus = setInterval(async () => {
-                                const statusRes = await fetch('/api/status/' + data.task_id);
+                        if (!data.success) {
+                            throw new Error(data.message || 'İndirme başlatılamadı');
+                        }
+                        
+                        statusText.textContent = 'İndirme başladı! İlerleme takip ediliyor...';
+                        const taskId = data.task_id;
+                        
+                        const checkStatus = setInterval(async () => {
+                            try {
+                                const statusRes = await fetch('/api/status/' + taskId);
                                 const statusData = await statusRes.json();
                                 
                                 if (statusData.status === 'TAMAMLANDI') {
                                     clearInterval(checkStatus);
-                                    statusDiv.innerHTML = 'Complete! <a href="' + statusData.link + 
-                                                         '" style="color:#22c55e">Download</a>';
+                                    statusText.textContent = '✓ Tamamlandı!';
+                                    progressDiv.textContent = 'İlerleme: ' + statusData.ilerleme;
+                                    downloadLink.innerHTML = '<a href="' + statusData.link + '" target="_blank">📥 ZIP Dosyasını İndir</a>';
+                                    submitBtn.disabled = false;
+                                    submitBtn.textContent = 'Start Download';
+                                } else if (statusData.status === 'HATA') {
+                                    clearInterval(checkStatus);
+                                    statusDiv.classList.add('error');
+                                    statusText.textContent = '✗ Hata: ' + (statusData.message || 'Bilinmeyen hata');
+                                    submitBtn.disabled = false;
+                                    submitBtn.textContent = 'Start Download';
                                 } else {
-                                    statusDiv.textContent = 'Progress: ' + statusData.ilerleme;
+                                    statusText.textContent = 'Durum: ' + statusData.status;
+                                    progressDiv.textContent = 'İlerleme: ' + statusData.ilerleme;
                                 }
-                            }, 2000);
-                        }
+                            } catch (err) {
+                                console.error('Status check error:', err);
+                            }
+                        }, 3000);
+                        
                     } catch (err) {
-                        statusDiv.textContent = 'Error: ' + err.message;
+                        statusDiv.classList.add('error');
+                        statusText.textContent = '✗ Hata: ' + err.message;
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Start Download';
                     }
                 });
             </script>
@@ -372,13 +428,21 @@ def handle_spotify_download():
         if not playlist_url:
             return jsonify({"success": False, "message": "Playlist URL gerekli."}), 400
         
-        # Celery task'ı başlat
-        task = toplu_indirme_gorevi.apply_async(args=[playlist_url, output_format])
+        # Unique task ID oluştur
+        task_id = str(uuid.uuid4())
+        
+        # Thread başlat (arkaplanda çalışır)
+        thread = threading.Thread(
+            target=toplu_indirme_gorevi,
+            args=(playlist_url, output_format, task_id),
+            daemon=True
+        )
+        thread.start()
         
         return jsonify({
             "success": True,
             "message": "İndirme görevi başlatıldı.",
-            "task_id": task.id
+            "task_id": task_id
         }), 202
         
     except Exception as e:
@@ -394,19 +458,27 @@ def get_task_status(task_id):
             return jsonify({
                 "status": data['durum'],
                 "ilerleme": data.get('ilerleme', '0/0'),
-                "link": data.get('indirme_url')
+                "link": data.get('indirme_url'),
+                "message": data.get('hata_mesaji')
             })
         
         return jsonify({
             "status": "BEKLİYOR",
-            "message": "Görev henüz başlamadı."
+            "message": "Görev henüz başlamadı.",
+            "ilerleme": "0/0"
         }), 404
         
     except Exception as e:
         return jsonify({
             "status": "HATA",
-            "message": str(e)
+            "message": str(e),
+            "ilerleme": "0/0"
         }), 500
 
+# Health check endpoint
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy", "service": "nexus-downloader"}), 200
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(PORT), debug=True)
+    app.run(host='0.0.0.0', port=int(PORT), debug=False)
