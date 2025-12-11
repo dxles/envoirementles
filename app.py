@@ -179,12 +179,14 @@ def toplu_indirme_gorevi(playlist_url, output_format, gorev_id):
     os.makedirs(temp_dir, exist_ok=True)
     
     try:
-        # Görev durumunu başlat
+        # Görev durumunu başlat - İLERLEME MUTLAKA EKLENMELİ
         supabase.table("gorevler").insert({
             "id": gorev_id,
             "durum": "BAŞLADI",
             "kaynak": playlist_url,
-            "ilerleme": "0/???"
+            "ilerleme": "0/0",
+            "indirme_url": None,
+            "hata_mesaji": None
         }).execute()
         
         print(f"[{gorev_id}] Playlist parsing başladı...")
@@ -196,19 +198,26 @@ def toplu_indirme_gorevi(playlist_url, output_format, gorev_id):
         if toplam_sarki == 0:
             raise Exception("Playlist'te şarkı bulunamadı")
         
+        # Toplam şarkı sayısını güncelle
+        supabase.table("gorevler").update({
+            "ilerleme": f"0/{toplam_sarki}",
+            "durum": "İŞLENİYOR"
+        }).eq("id", gorev_id).execute()
+        
         print(f"[{gorev_id}] {toplam_sarki} şarkı bulundu")
         
         mp3_yollari = []
         
         for i, sarki in enumerate(sarki_listesi):
             try:
-                # İlerlemeyi güncelle
+                # İlerlemeyi güncelle - Her şarkıda
+                current_progress = f"{i+1}/{toplam_sarki}"
                 supabase.table("gorevler").update({
-                    "ilerleme": f"{i+1}/{toplam_sarki}",
+                    "ilerleme": current_progress,
                     "durum": "İŞLENİYOR"
                 }).eq("id", gorev_id).execute()
                 
-                print(f"[{gorev_id}] İşleniyor ({i+1}/{toplam_sarki}): {sarki['arama_sorgusu']}")
+                print(f"[{gorev_id}] İşleniyor ({current_progress}): {sarki['arama_sorgusu']}")
                 
                 # YouTube'da ara
                 youtube_url = youtube_video_ara(sarki['arama_sorgusu'])
@@ -238,6 +247,12 @@ def toplu_indirme_gorevi(playlist_url, output_format, gorev_id):
         
         print(f"[{gorev_id}] ZIP oluşturuluyor... ({len(mp3_yollari)} dosya)")
         
+        # ZIP durumunu göster
+        supabase.table("gorevler").update({
+            "ilerleme": f"{len(mp3_yollari)}/{toplam_sarki}",
+            "durum": "ZIP OLUŞTURULUYOR"
+        }).eq("id", gorev_id).execute()
+        
         # ZIP oluştur
         zip_cikti_yolu = os.path.join("/tmp", f"{gorev_id}.zip")
         with zipfile.ZipFile(zip_cikti_yolu, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -245,6 +260,11 @@ def toplu_indirme_gorevi(playlist_url, output_format, gorev_id):
                 zipf.write(mp3_yolu, os.path.basename(mp3_yolu))
         
         print(f"[{gorev_id}] Supabase'e yükleniyor...")
+        
+        # Upload durumu
+        supabase.table("gorevler").update({
+            "durum": "YÜKLENIYOR"
+        }).eq("id", gorev_id).execute()
         
         # Supabase Storage'a yükle
         file_path = f"downloads/{gorev_id}.zip"
@@ -268,8 +288,6 @@ def toplu_indirme_gorevi(playlist_url, output_format, gorev_id):
         if os.path.exists(zip_cikti_yolu):
             os.remove(zip_cikti_yolu)
         
-        return {"status": "TAMAMLANDI", "link": indirme_linki}
-        
     except Exception as e:
         hata_mesaji = str(e)
         print(f"[{gorev_id}] GENEL HATA: {hata_mesaji}")
@@ -281,8 +299,6 @@ def toplu_indirme_gorevi(playlist_url, output_format, gorev_id):
         
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
-        
-        return {"status": "HATA", "hata_mesaji": hata_mesaji}
 
 # FLASK ROUTE'LAR
 @app.route('/')
@@ -301,51 +317,95 @@ def index():
             <title>NEXUS - Download Your Playlists</title>
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
-                body { font-family: 'Segoe UI', sans-serif; background: #050508; color: #e5e7eb; }
+                body { font-family: 'Segoe UI', sans-serif; background: #050508; color: #e5e7eb; min-height: 100vh; }
                 .container { max-width: 800px; margin: 0 auto; padding: 2rem; }
                 h1 { font-size: 3rem; text-align: center; margin: 2rem 0; 
                      background: linear-gradient(135deg, #6366f1, #ec4899);
-                     -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+                     -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+                     background-clip: text; }
+                .subtitle { text-align: center; color: #9ca3af; margin-bottom: 3rem; font-size: 1.1rem; }
                 .form-card { background: rgba(255,255,255,0.05); padding: 2rem; 
-                            border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); }
-                input, select, button { width: 100%; padding: 1rem; margin: 1rem 0;
-                                       background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.1);
-                                       border-radius: 10px; color: white; font-size: 1rem; }
-                button { background: linear-gradient(135deg, #6366f1, #ec4899);
-                        cursor: pointer; font-weight: bold; }
-                button:hover { opacity: 0.9; }
-                button:disabled { opacity: 0.5; cursor: not-allowed; }
-                .status { display: none; margin-top: 2rem; padding: 1rem;
-                         background: rgba(99,102,241,0.2); border-radius: 10px; border: 1px solid rgba(99,102,241,0.5); }
+                            border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); 
+                            backdrop-filter: blur(10px); }
+                label { display: block; margin-bottom: 0.5rem; color: #6366f1; font-weight: 600; 
+                       text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px; }
+                input, select { width: 100%; padding: 1rem; margin-bottom: 1.5rem;
+                               background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.1);
+                               border-radius: 10px; color: white; font-size: 1rem; transition: all 0.3s; }
+                input:focus, select:focus { outline: none; border-color: #6366f1; 
+                                            background: rgba(255,255,255,0.08); }
+                button { width: 100%; padding: 1.25rem; margin-top: 1rem;
+                        background: linear-gradient(135deg, #6366f1, #ec4899);
+                        border: none; border-radius: 10px; color: white; font-size: 1.1rem;
+                        cursor: pointer; font-weight: bold; text-transform: uppercase; 
+                        letter-spacing: 1px; transition: all 0.3s; }
+                button:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(99,102,241,0.4); }
+                button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+                .status { display: none; margin-top: 2rem; padding: 1.5rem;
+                         background: rgba(99,102,241,0.1); border-radius: 10px; 
+                         border: 1px solid rgba(99,102,241,0.3); animation: slideIn 0.3s ease; }
                 .status.active { display: block; }
-                .progress { margin-top: 1rem; font-size: 1.2rem; font-weight: bold; color: #22c55e; }
-                .error { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.5); color: #ef4444; }
-                .download-link { margin-top: 1rem; }
-                .download-link a { color: #22c55e; text-decoration: none; font-weight: bold; }
-                .download-link a:hover { text-decoration: underline; }
+                .status.error { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }
+                .status.success { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.3); }
+                @keyframes slideIn {
+                    from { opacity: 0; transform: translateY(20px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                #statusText { font-size: 1rem; margin-bottom: 1rem; color: #e5e7eb; }
+                .progress { margin-top: 1rem; font-size: 1.3rem; font-weight: bold; 
+                           color: #6366f1; text-align: center; }
+                .download-link { margin-top: 1.5rem; text-align: center; }
+                .download-link a { display: inline-block; padding: 1rem 2rem; 
+                                  background: linear-gradient(135deg, #22c55e, #10b981);
+                                  color: white; text-decoration: none; border-radius: 10px;
+                                  font-weight: bold; transition: all 0.3s; }
+                .download-link a:hover { transform: translateY(-2px); 
+                                        box-shadow: 0 10px 30px rgba(34,197,94,0.4); }
+                .info { margin-top: 3rem; padding: 1.5rem; background: rgba(255,255,255,0.03);
+                       border-radius: 10px; border-left: 4px solid #6366f1; }
+                .info h3 { color: #6366f1; margin-bottom: 0.5rem; }
+                .info p { color: #9ca3af; font-size: 0.95rem; line-height: 1.6; }
             </style>
         </head>
         <body>
             <div class="container">
                 <h1>NEXUS</h1>
+                <p class="subtitle">Transform your Spotify playlists into downloadable music collections</p>
+                
                 <div class="form-card">
                     <form id="downloadForm">
+                        <label for="playlistUrl">Spotify Playlist URL</label>
                         <input type="text" id="playlistUrl" name="playlist_url" 
-                               placeholder="Spotify Playlist URL (örn: https://open.spotify.com/playlist/...)" required>
-                        <select name="output_format">
-                            <option value="mp3">MP3</option>
-                            <option value="m4a">M4A</option>
-                            <option value="wav">WAV</option>
+                               placeholder="https://open.spotify.com/playlist/..." required>
+                        
+                        <label for="outputFormat">Output Format</label>
+                        <select id="outputFormat" name="output_format">
+                            <option value="mp3">MP3 (Recommended)</option>
+                            <option value="m4a">M4A (Apple)</option>
+                            <option value="wav">WAV (Lossless)</option>
                         </select>
-                        <button type="submit" id="submitBtn">Start Download</button>
+                        
+                        <button type="submit" id="submitBtn">🚀 Start Download</button>
                     </form>
+                    
                     <div class="status" id="status">
-                        <div id="statusText">Başlatılıyor...</div>
+                        <div id="statusText">Initializing...</div>
                         <div class="progress" id="progress"></div>
                         <div class="download-link" id="downloadLink"></div>
                     </div>
                 </div>
+                
+                <div class="info">
+                    <h3>ℹ️ How it works</h3>
+                    <p>
+                        1. Paste your Spotify playlist URL<br>
+                        2. Choose your preferred audio format<br>
+                        3. Click start and wait for the download to complete<br>
+                        4. Download your ZIP file with all tracks
+                    </p>
+                </div>
             </div>
+            
             <script>
                 document.getElementById('downloadForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
@@ -357,13 +417,14 @@ def index():
                     const downloadLink = document.getElementById('downloadLink');
                     const submitBtn = document.getElementById('submitBtn');
                     
+                    // Reset status
+                    statusDiv.classList.remove('error', 'success');
                     statusDiv.classList.add('active');
-                    statusDiv.classList.remove('error');
-                    statusText.textContent = 'Playlist işleniyor...';
+                    statusText.textContent = '⏳ Processing playlist...';
                     progressDiv.textContent = '';
                     downloadLink.innerHTML = '';
                     submitBtn.disabled = true;
-                    submitBtn.textContent = 'İşleniyor...';
+                    submitBtn.textContent = '⏳ Processing...';
                     
                     try {
                         const response = await fetch('/api/download/spotify', {
@@ -374,10 +435,10 @@ def index():
                         const data = await response.json();
                         
                         if (!data.success) {
-                            throw new Error(data.message || 'İndirme başlatılamadı');
+                            throw new Error(data.message || 'Failed to start download');
                         }
                         
-                        statusText.textContent = 'İndirme başladı! İlerleme takip ediliyor...';
+                        statusText.textContent = '✓ Download started! Tracking progress...';
                         const taskId = data.task_id;
                         
                         const checkStatus = setInterval(async () => {
@@ -387,20 +448,24 @@ def index():
                                 
                                 if (statusData.status === 'TAMAMLANDI') {
                                     clearInterval(checkStatus);
-                                    statusText.textContent = '✓ Tamamlandı!';
-                                    progressDiv.textContent = 'İlerleme: ' + statusData.ilerleme;
-                                    downloadLink.innerHTML = '<a href="' + statusData.link + '" target="_blank">📥 ZIP Dosyasını İndir</a>';
+                                    statusDiv.classList.add('success');
+                                    statusText.textContent = '✓ Download Complete!';
+                                    progressDiv.textContent = 'Files: ' + statusData.ilerleme;
+                                    downloadLink.innerHTML = '<a href="' + statusData.link + '" download>📥 Download ZIP File</a>';
                                     submitBtn.disabled = false;
-                                    submitBtn.textContent = 'Start Download';
+                                    submitBtn.textContent = '🚀 Start Download';
+                                    
                                 } else if (statusData.status === 'HATA') {
                                     clearInterval(checkStatus);
                                     statusDiv.classList.add('error');
-                                    statusText.textContent = '✗ Hata: ' + (statusData.message || 'Bilinmeyen hata');
+                                    statusText.textContent = '✗ Error: ' + (statusData.message || 'Unknown error');
+                                    progressDiv.textContent = '';
                                     submitBtn.disabled = false;
-                                    submitBtn.textContent = 'Start Download';
+                                    submitBtn.textContent = '🚀 Start Download';
+                                    
                                 } else {
-                                    statusText.textContent = 'Durum: ' + statusData.status;
-                                    progressDiv.textContent = 'İlerleme: ' + statusData.ilerleme;
+                                    statusText.textContent = '⏳ Status: ' + statusData.status;
+                                    progressDiv.textContent = 'Progress: ' + (statusData.ilerleme || '0/0');
                                 }
                             } catch (err) {
                                 console.error('Status check error:', err);
@@ -409,9 +474,10 @@ def index():
                         
                     } catch (err) {
                         statusDiv.classList.add('error');
-                        statusText.textContent = '✗ Hata: ' + err.message;
+                        statusText.textContent = '✗ Error: ' + err.message;
+                        progressDiv.textContent = '';
                         submitBtn.disabled = false;
-                        submitBtn.textContent = 'Start Download';
+                        submitBtn.textContent = '🚀 Start Download';
                     }
                 });
             </script>
@@ -427,6 +493,10 @@ def handle_spotify_download():
         
         if not playlist_url:
             return jsonify({"success": False, "message": "Playlist URL gerekli."}), 400
+        
+        # Validate Spotify URL
+        if 'spotify.com/playlist/' not in playlist_url:
+            return jsonify({"success": False, "message": "Geçersiz Spotify playlist URL'i."}), 400
         
         # Unique task ID oluştur
         task_id = str(uuid.uuid4())
@@ -456,7 +526,7 @@ def get_task_status(task_id):
         
         if data:
             return jsonify({
-                "status": data['durum'],
+                "status": data.get('durum', 'UNKNOWN'),
                 "ilerleme": data.get('ilerleme', '0/0'),
                 "link": data.get('indirme_url'),
                 "message": data.get('hata_mesaji')
@@ -478,7 +548,12 @@ def get_task_status(task_id):
 # Health check endpoint
 @app.route('/health')
 def health():
-    return jsonify({"status": "healthy", "service": "nexus-downloader"}), 200
+    return jsonify({
+        "status": "healthy", 
+        "service": "nexus-downloader",
+        "version": "1.0.0"
+    }), 200
 
 if __name__ == '__main__':
+    # Production modda debug=False
     app.run(host='0.0.0.0', port=int(PORT), debug=False)
