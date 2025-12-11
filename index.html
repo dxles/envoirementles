@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ Medya Merkezi (Free & Sınırsız)</title>
+    <style>
+        /* Basit CSS stilleri buraya gelecek */
+        body { font-family: sans-serif; margin: 0; padding: 20px; background-color: #121212; color: #e0e0e0; }
+        .container { max-width: 800px; margin: auto; background: #1f1f1f; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
+        h1 { color: #1DB954; text-align: center; }
+        .tab-menu button { background: #333; color: #fff; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px 5px 0 0; margin-right: 5px; }
+        .tab-menu button.active { background: #1DB954; }
+        .content-box { border: 1px solid #333; padding: 20px; border-top: none; background: #2a2a2a; border-radius: 0 0 8px 8px; }
+        input[type="text"], input[type="file"] { width: calc(100% - 22px); padding: 10px; margin-bottom: 15px; border: 1px solid #555; background: #333; color: #e0e0e0; border-radius: 4px; }
+        button[type="submit"] { background: #1DB954; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎧 Müzik & Medya Merkezi </h1>
+        <p style="text-align: center;">Spotify Playlist, TXT Listesi veya Yerel Dosya Dönüştürme</p>
+
+        <div class="tab-menu">
+            <button class="tab-btn active" data-tab="spotify">Spotify Playlist İndir</button>
+            <button class="tab-btn" data-tab="converter">Format Dönüştürücü</button>
+        </div>
+
+        <div id="spotify" class="content-box tab-content">
+            <form id="spotify-form" method="POST" action="/api/download/spotify">
+                <label for="playlist_url">Spotify Playlist URL'si:</label>
+                <input type="text" id="playlist_url" name="playlist_url" 
+                       placeholder="Örn: https://open.spotify.com/playlist/..." required>
+                
+                <label for="format_spotify">Çıktı Formatı:</label>
+                <select id="format_spotify" name="output_format" style="width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+                    <option value="mp3">MP3 (Yüksek Kalite)</option>
+                    <option value="flac">FLAC (Kayıpsız)</option>
+                </select>
+
+                <button type="submit">İndirme Başlat</button>
+            </form>
+            <div id="spotify-status" style="margin-top: 20px; color: #ffeb3b;"></div>
+        </div>
+
+        <div id="converter" class="content-box tab-content" style="display:none;">
+            <form id="converter-form" method="POST" action="/api/convert" enctype="multipart/form-data">
+                <label for="file_upload">Dönüştürülecek Dosyayı Seçin (.webm, .m4a, .wav vb.):</label>
+                <input type="file" id="file_upload" name="media_file" required>
+                
+                <label for="format_convert">Hedef Format:</label>
+                <select id="format_convert" name="output_format" style="width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
+                    <option value="mp3">MP3</option>
+                    <option value="wav">WAV</option>
+                    <option value="flac">FLAC</option>
+                </select>
+
+                <button type="submit">Dönüştür ve İndir</button>
+            </form>
+            <div id="converter-status" style="margin-top: 20px; color: #ffeb3b;"></div>
+        </div>
+        
+        <p style="font-size: 12px; text-align: center; margin-top: 30px;">Tüm işlemler ücretsizdir ve dönüştürme sunucularımızda gerçekleşir. FFmpeg desteklidir.</p>
+    </div>
+
+    <script>
+        // JavaScript ile sekme geçişleri ve form gönderimi yönetilir
+        document.querySelectorAll('.tab-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const tabId = button.getAttribute('data-tab');
+
+                // Tüm sekmeleri ve içerikleri gizle/pasif yap
+                document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+                // Tıklananı göster/aktif yap
+                document.getElementById(tabId).style.display = 'block';
+                button.classList.add('active');
+            });
+        });
+
+        // NOT: Formların gönderilmesi (Flask'a veri gönderme) ve 
+        // durum takibi (işlem kuyruğu) için karmaşık JavaScript/AJAX kodu gerekecektir.
+    </script>
+</body>
+</html>
